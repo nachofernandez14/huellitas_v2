@@ -1,0 +1,1 @@
+Necesito que codees las tareas que te voy a pasar, no quiero que toques la logica actual, vos solo vas a realizar las tareas ayudandote de la logica del proyecto, vas a ser certero y si salen errores los vas a solucionar

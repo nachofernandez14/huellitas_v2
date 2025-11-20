@@ -24,13 +24,10 @@ class ProveedoresController:
     def _setup_button_commands(self):
         """Configura los comandos de los botones de la vista."""
         self.view.btn_agregar.configure(command=self.on_add_proveedor)
+        self.view.btn_editar.configure(command=self.on_edit_proveedor)
         self.view.btn_borrar.configure(command=self.on_delete_proveedor)
         self.view.btn_ver_saldo.configure(command=self.on_ver_saldo)
-        self.view.btn_guardar.configure(command=self.on_save_proveedor)
-        self.view.btn_cancelar.configure(command=self.on_cancel_edit)
         self.view.btn_search.configure(command=self.on_search)
-        self.view.btn_prev.configure(command=self.on_prev_page)
-        self.view.btn_next.configure(command=self.on_next_page)
         
         # Enter en búsqueda
         self.view.search_entry.bind("<Return>", lambda e: self.on_search())
@@ -38,40 +35,57 @@ class ProveedoresController:
     def on_add_proveedor(self):
         """Inicia el modo de agregar proveedor."""
         self.view.add_new_row()
+    
+    def create_proveedor(self, nombre, telefono, saldo):
+        """Crea un nuevo proveedor en la base de datos."""
+        try:
+            proveedor_data = {
+                "nombre": nombre,
+                "telefono": telefono,
+                "saldo": saldo
+            }
+            success = self.model.add_proveedor(proveedor_data)
+            if success:
+                messagebox.showinfo("Éxito", f"Proveedor '{nombre}' creado correctamente")
+                self.search_proveedores()
+            else:
+                messagebox.showerror("Error", "No se pudo crear el proveedor")
+        except Exception as e:
+            raise e
 
     def on_edit_proveedor(self):
-        """El proveedor se edita directamente en el sheet haciendo doble clic en la celda."""
-        messagebox.showinfo("Edición", "Haga doble clic en una celda para editarla directamente.")
+        """Habilita la edición inline del proveedor seleccionado."""
+        # TODO: Implementar edición inline
+        messagebox.showinfo("Información", "Función de edición en desarrollo")
 
     def on_delete_proveedor(self):
         """Borra el proveedor seleccionado."""
-        if not hasattr(self.view, '_selected_proveedor') or not self.view._selected_proveedor:
-            self.view.show_message("Error", "Seleccione un proveedor para borrar", "error")
-            return
+        self.view.delete_selected()
 
-        proveedor = self.view._selected_proveedor
-        nombre = proveedor.get("nombre", "")
-        
-        # confirmación
-        result = messagebox.askyesno(
-            "Confirmar eliminación",
-            f"¿Está seguro que desea eliminar el proveedor '{nombre}'?\n\nEsta acción no se puede deshacer."
-        )
-        
-        if result:
-            # borrar en BD en hilo separado
-            def delete_thread():
-                try:
-                    success = self.model.delete_proveedor(proveedor.get("id"))
-                    if success:
-                        # actualizar vista en hilo principal
-                        self.view.after(0, lambda: self._on_delete_success())
-                    else:
-                        self.view.after(0, lambda: self.view.show_message("Error", "No se pudo eliminar el proveedor", "error"))
-                except Exception as e:
-                    self.view.after(0, lambda: self.view.show_message("Error", f"Error al eliminar: {str(e)}", "error"))
-
-            threading.Thread(target=delete_thread, daemon=True).start()
+    def delete_proveedor(self, nombre):
+        """Elimina un proveedor de la base de datos."""
+        try:
+            # Buscar el proveedor por nombre
+            proveedores = self.model.search_proveedores(nombre)
+            proveedor = None
+            for p in proveedores:
+                if p.get("nombre") == nombre:
+                    proveedor = p
+                    break
+            
+            if not proveedor:
+                messagebox.showerror("Error", "No se encontró el proveedor")
+                return
+            
+            # borrar en BD
+            success = self.model.delete_proveedor(proveedor.get("id"))
+            if success:
+                messagebox.showinfo("Éxito", "Proveedor eliminado correctamente")
+                self.search_proveedores()
+            else:
+                messagebox.showerror("Error", "No se pudo eliminar el proveedor")
+        except Exception as e:
+            raise e
 
     def _on_delete_success(self):
         """Callback cuando se elimina exitosamente."""
@@ -80,7 +94,7 @@ class ProveedoresController:
         self.search_proveedores()
 
     def on_ver_saldo(self):
-        """Abre la ventana de saldo del proveedor seleccionado."""
+        """Abre la ventana de gestión de saldo del proveedor seleccionado."""
         if not hasattr(self.view, '_selected_proveedor') or not self.view._selected_proveedor:
             self.view.show_message("Error", "Seleccione un proveedor para ver su saldo", "error")
             return
@@ -92,17 +106,19 @@ class ProveedoresController:
             self.view.show_message("Error", "No se pudo obtener la información del proveedor", "error")
             return
         
-        # Importar la clase de ventana de saldo
-        from views.proveedores_view import SaldoProveedorWindow
+        # Crear ventana toplevel para saldos
+        ventana_saldos = ctk.CTkToplevel(self.view)
+        ventana_saldos.title(f"Saldo - {proveedor.get('nombre', 'Proveedor')}")
+        ventana_saldos.geometry("1100x700")
+        ventana_saldos.minsize(900, 600)
         
-        # Crear y mostrar la ventana de saldo
-        saldo_window = SaldoProveedorWindow(self.view, proveedor)
+        # Centrar ventana
+        ventana_saldos.transient(self.view)
+        ventana_saldos.grab_set()
         
-        # Centrar la ventana respecto a la ventana principal
-        saldo_window.update_idletasks()
-        x = self.view.winfo_rootx() + (self.view.winfo_width() // 2) - (saldo_window.winfo_width() // 2)
-        y = self.view.winfo_rooty() + (self.view.winfo_height() // 2) - (saldo_window.winfo_height() // 2)
-        saldo_window.geometry(f"+{x}+{y}")
+        # Crear controller de saldos dentro de la ventana
+        from controllers.saldos_proveedores_controller import SaldosProveedoresController
+        SaldosProveedoresController(ventana_saldos, proveedor, app_controller=None)
 
     def on_save_proveedor(self):
         """Guarda el proveedor (nuevo o editado)."""

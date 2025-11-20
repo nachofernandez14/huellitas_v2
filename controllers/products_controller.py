@@ -25,8 +25,12 @@ class ProductsController:
 		# Botones principales
 		self.view.btn_agregar.configure(command=self.on_add_product)
 		self.view.btn_borrar.configure(command=self.on_delete_product)
-		self.view.btn_guardar.configure(command=self.on_save_product)
-		self.view.btn_cancelar.configure(command=self.on_cancel_edit)
+		
+		# Botón Aumentar productos
+		try:
+			self.view.btn_aumentar.configure(command=self.on_aumentar_productos)
+		except Exception:
+			pass
 		
 		# Botones de búsqueda
 		self.view.search_btn.configure(command=self.on_search)
@@ -50,15 +54,6 @@ class ProductsController:
 		"""Comando del botón Agregar - Agrega una fila nueva en el sheet."""
 		self.view.add_new_row()
 	
-	def on_edit_product(self):
-		"""Comando del botón Editar - Maneja la edición de producto."""
-		if self.view._selected_id is None:
-			messagebox.showinfo("Editar producto", "Seleccione un producto primero.")
-			return
-		
-		# Habilitar modo edición en la vista
-		self._enable_edit_mode()
-	
 	def on_delete_product(self):
 		"""Comando del botón Borrar - Llama al modelo para eliminar."""
 		if self.view._selected_id is None:
@@ -77,17 +72,6 @@ class ProductsController:
 			self._refresh_view()
 		except Exception as e:
 			messagebox.showerror("Error al borrar", f"Ocurrió un error al borrar: {e}")
-	
-	def on_save_product(self):
-		"""Comando del botón Guardar - Guarda el producto editado o nuevo."""
-		# Implementar según si es edición o nuevo producto
-		pass
-	
-	def on_cancel_edit(self):
-		"""Comando del botón Cancelar - Cancela la edición actual."""
-		self._disable_edit_mode()
-		if hasattr(self.view, '_editor_row') and self.view._editor_row is not None:
-			self.view._cancel_new(self.view._editor_row)
 	
 	def on_search(self):
 		"""Comando del botón Buscar - Busca productos."""
@@ -117,11 +101,6 @@ class ProductsController:
 			messagebox.showerror("Error al agregar", f"Ocurrió un error al agregar: {e}")
 			return None
 
-	def edit_product(self, product_id):
-		"""Edita un producto existente."""
-		# Este método puede ser llamado desde la vista
-		self._enable_edit_mode()
-
 	def delete_product(self, product_id):
 		"""Elimina un producto a través del modelo."""
 		try:
@@ -130,46 +109,33 @@ class ProductsController:
 		except Exception as e:
 			raise e
 	
-	def update_product_from_sheet(self, product_id, updated_data):
+	def update_product_from_sheet(self, product_id, updated_data, row_idx=None):
 		"""Actualiza un producto editado desde el sheet."""
 		try:
 			if product_id is None:
-				# Es un producto nuevo, crear en BD
+				# Es un producto nuevo, crear en BD solo si tiene nombre
 				if not updated_data.get("nombre"):
-					messagebox.showwarning("Advertencia", "El nombre del producto es obligatorio.")
+					# Aún no tiene nombre, esperar a que lo complete
 					return
 				
+				# Crear el producto en la BD
 				new_id = self.model.create_product(updated_data)
 				if new_id:
+					# Actualizar el ID en la vista
+					if row_idx is not None and hasattr(self.view, '_productos'):
+						self.view._productos[row_idx]["id"] = new_id
 					messagebox.showinfo("Éxito", "Producto creado correctamente.")
-					self._refresh_view()
+					# Refrescar para mostrar el nuevo producto con ID en la primera página
+					self.search_products(query=self.view._last_query, page=0, page_size=50, async_search=True)
 			else:
 				# Actualizar producto existente
 				self.model.update_product(product_id, updated_data)
-				messagebox.showinfo("Éxito", "Producto actualizado correctamente.")
+				# No mostrar mensaje para cada edición individual
 		except Exception as e:
 			messagebox.showerror("Error", f"Error al guardar: {e}")
 			raise e
 
 	# === MÉTODOS DE SOPORTE ===
-
-	def _enable_edit_mode(self):
-		"""Habilita el modo de edición."""
-		self.view.btn_guardar.configure(state="normal")
-		self.view.btn_cancelar.configure(state="normal")
-		self.view.btn_agregar.configure(state="disabled")
-		self.view.btn_editar.configure(state="disabled")
-		self.view.btn_borrar.configure(state="disabled")
-
-	def _disable_edit_mode(self):
-		"""Deshabilita el modo de edición."""
-		self.view.btn_guardar.configure(state="disabled")
-		self.view.btn_cancelar.configure(state="disabled")
-		self.view.btn_agregar.configure(state="normal")
-		# Los botones borrar se habilitan según selección
-		if self.view._selected_id is not None:
-			self.view.btn_editar.configure(state="normal")
-			self.view.btn_borrar.configure(state="normal")
 
 	def _schedule_search(self, delay=300):
 		"""Programa una búsqueda con retraso (debounce)."""
@@ -217,5 +183,105 @@ class ProductsController:
 		"""Entrega una página de resultados a la vista."""
 		if self.view:
 			self.view.set_page(rows, page, page_size, total)
+
+	def on_aumentar_productos(self):
+		"""Abre la ventana de aumentar productos."""
+		try:
+			from views.aumentar_productos_view import AumentarProductosWindow
+			# Crear ventana
+			ventana = AumentarProductosWindow(self.view, controller=self)
+			# Configurar comandos de los botones
+			ventana.btn_buscar.configure(command=lambda: self._buscar_productos_aumentar(ventana))
+			ventana.btn_cargar_todos.configure(command=lambda: self._cargar_todos_productos_aumentar(ventana))
+			ventana.btn_aplicar.configure(command=lambda: self._aplicar_aumento_precios(ventana))
+			ventana.btn_eliminar.configure(command=lambda: ventana.eliminar_producto_seleccionado())
+		except Exception as e:
+			messagebox.showerror("Error", f"No se pudo abrir la ventana: {e}")
+	
+	def _buscar_productos_aumentar(self, ventana):
+		"""Busca productos por nombre y los carga en la ventana."""
+		query = ventana.entry_buscar.get().strip()
+		if not query:
+			messagebox.showwarning("Advertencia", "Ingrese un texto para buscar")
+			return
+		
+		try:
+			# Buscar productos que contengan el texto en el nombre
+			productos, _ = self.model.search_products(query=query, limit=1000, offset=0)
+			if not productos:
+				messagebox.showinfo("Sin resultados", f"No se encontraron productos con '{query}' en el nombre")
+				return
+			
+			ventana.cargar_productos(productos)
+			messagebox.showinfo("Éxito", f"Se cargaron {len(productos)} productos")
+		except Exception as e:
+			messagebox.showerror("Error", f"Error al buscar productos: {e}")
+	
+	def _cargar_todos_productos_aumentar(self, ventana):
+		"""Carga todos los productos en la ventana."""
+		confirmar = messagebox.askyesno(
+			"Confirmar",
+			"¿Desea cargar TODOS los productos?\nEsto puede tardar si hay muchos registros."
+		)
+		if not confirmar:
+			return
+		
+		try:
+			productos = self.model.get_all()
+			if not productos:
+				messagebox.showinfo("Sin datos", "No hay productos en la base de datos")
+				return
+			
+			ventana.cargar_productos(productos)
+			messagebox.showinfo("Éxito", f"Se cargaron {len(productos)} productos")
+		except Exception as e:
+			messagebox.showerror("Error", f"Error al cargar productos: {e}")
+	
+	def _aplicar_aumento_precios(self, ventana):
+		"""Aplica el aumento de precios y actualiza la base de datos."""
+		porcentaje = ventana.entry_porcentaje.get().strip()
+		if not porcentaje:
+			messagebox.showwarning("Advertencia", "Ingrese un porcentaje de aumento")
+			return
+		
+		if not ventana.productos_cargados:
+			messagebox.showwarning("Advertencia", "No hay productos cargados")
+			return
+		
+		# Calcular nuevos precios
+		ventana.calcular_precios_nuevos(porcentaje)
+		
+		# Confirmar aplicación
+		confirmar = messagebox.askyesno(
+			"Confirmar aumento",
+			f"¿Confirma aplicar el aumento del {porcentaje}% a {len(ventana.productos_cargados)} productos?\n\nEsta acción actualizará los precios en la base de datos."
+		)
+		
+		if not confirmar:
+			return
+		
+		# Actualizar en BD
+		try:
+			productos_actualizados = ventana.obtener_productos_actualizados()
+			exitosos = 0
+			
+			for prod_data in productos_actualizados:
+				try:
+					self.model.update_product(prod_data['id'], {'precio_venta': prod_data['precio_venta']})
+					exitosos += 1
+				except Exception as e:
+					print(f"Error actualizando producto {prod_data['id']}: {e}")
+			
+			messagebox.showinfo("Éxito", f"Se actualizaron {exitosos} de {len(productos_actualizados)} productos correctamente")
+			
+			# Refrescar vista principal
+			self._refresh_view()
+			
+			# Cerrar ventana
+			ventana.destroy()
+			
+		except Exception as e:
+			messagebox.showerror("Error", f"Error al aplicar aumento: {e}")
+
 
 

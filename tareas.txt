@@ -1,0 +1,2 @@
+1-Que cuando seleccione una categoria el color de la seleccion sea un poco mas pastel al color de la columna
+2-Cuando agrego una categoria los entrys de la nueva fila no estan alineados con las columnas, y en la columna de id, poneme un entry pero que no se pueda editar

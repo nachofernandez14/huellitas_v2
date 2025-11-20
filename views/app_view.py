@@ -18,8 +18,13 @@ class AppView(ctk.CTk):
 
         self.boton_categorias = ctk.CTkButton(self.frame_navbar, text="Categorias", fg_color="#00fe67", hover_color="#08863b", font=ctk.CTkFont(size=16), border_width=0, text_color="#006400")
         self.boton_categorias.pack(side="left", fill="y")
+        
         self.boton_proveedores = ctk.CTkButton(self.frame_navbar, text="Proveedores", fg_color="#00fe67", hover_color="#08863b", font=ctk.CTkFont(size=16), border_width=0, text_color="#006400")
         self.boton_proveedores.pack(side="left", fill="y")
+        
+        self.boton_ventas = ctk.CTkButton(self.frame_navbar, text="Ventas", fg_color="#00fe67", hover_color="#08863b", font=ctk.CTkFont(size=16), border_width=0, text_color="#006400")
+        self.boton_ventas.pack(side="left", fill="y")
+        
         self.boton_config = ctk.CTkButton(self.frame_navbar, text="Configuracion", fg_color="#00fe67", hover_color="#08863b", font=ctk.CTkFont(size=16), border_width=0, text_color="#006400")
         self.boton_config.pack(side="right", fill="y")
         

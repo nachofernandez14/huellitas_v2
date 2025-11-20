@@ -61,7 +61,7 @@ class ProductsModel:
 
             sql = (
                 "SELECT id, nombre, id_categoria, subcategoria, id_proveedor, precio_costo, precio_venta, cantidad, estado, codigo_barras "
-                f"FROM articulos{where} LIMIT ? OFFSET ?"
+                f"FROM articulos{where} ORDER BY id DESC LIMIT ? OFFSET ?"
             )
             params_page = list(params) if params else []
             params_page.extend([limit, offset])
@@ -99,7 +99,7 @@ class ProductsModel:
         try:
             db = self._get_db_connection()
             cursor = db.execute(
-                "SELECT id, nombre, id_categoria, subcategoria, id_proveedor, precio_costo, precio_venta, cantidad, estado, codigo_barras FROM articulos"
+                "SELECT id, nombre, id_categoria, subcategoria, id_proveedor, precio_costo, precio_venta, cantidad, estado, codigo_barras FROM articulos ORDER BY id DESC"
             )
             rows = cursor.fetchall()
             result = []

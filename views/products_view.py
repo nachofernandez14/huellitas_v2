@@ -24,7 +24,7 @@ class ProductsView(ctk.CTkFrame):
     # Anchos por columna como porcentajes del ancho total
     COLUMN_WIDTHS = {
         "id": 50,
-        "nombre": 250,  # La más ancha
+        "nombre": 300,  # La más ancha
         "id_categoria": 80,
         "subcategoria": 120,
         "id_proveedor": 80,
@@ -74,17 +74,7 @@ class ProductsView(ctk.CTkFrame):
         search_frame.pack(fill="x", padx=10, pady=(10, 6))
         self.search_entry = ctk.CTkEntry(search_frame, width=320, placeholder_text="Buscar por nombre...")
         self.search_entry.pack(side="left", padx=(0, 6))
-        # permitir iniciar búsqueda con Enter (Return y keypad Enter)
-        try:
-            self.search_entry.bind("<Return>", lambda e: self._on_search())
-            self.search_entry.bind("<KP_Enter>", lambda e: self._on_search())
-        except Exception:
-            pass
-        # búsqueda en tiempo real: debounce sobre KeyRelease
-        try:
-            self.search_entry.bind("<KeyRelease>", lambda e: self._schedule_search())
-        except Exception:
-            pass
+        
         search_btn = ctk.CTkButton(search_frame, text="Buscar", width=100, fg_color="#1976D2", hover_color="#155fa0", text_color="#ffffff")
         search_btn.pack(side="left", padx=(0, 6))
         clear_btn = ctk.CTkButton(search_frame, text="Limpiar", width=100, fg_color="#9e9e9e", hover_color="#7e7e7e", text_color="#ffffff")
@@ -106,17 +96,12 @@ class ProductsView(ctk.CTkFrame):
         self.btn_borrar = ctk.CTkButton(toolbar, text="Borrar", width=120, fg_color=green, hover_color="#d32f2f", text_color="#ffffff")
         self.btn_borrar.pack(side="left", padx=6)
 
-        # botones de control de edición a la derecha
-        self.btn_cancelar = ctk.CTkButton(toolbar, text="Cancelar", state="disabled", fg_color="#9e9e9e", hover_color="#7e7e7e", text_color="#ffffff")
-        self.btn_cancelar.pack(side="right", padx=(10, 0))
+        # Botón "Aumentar productos" para ajuste masivo de precios
+        self.btn_aumentar = ctk.CTkButton(toolbar, text="Aumentar productos", width=160, fg_color="#FF9800", hover_color="#F57C00", text_color="#ffffff")
+        self.btn_aumentar.pack(side="left", padx=6)
 
-        self.btn_guardar = ctk.CTkButton(toolbar, text="Guardar", state="disabled", fg_color="#2e7d32", hover_color="#27632a", text_color="#ffffff")
-        self.btn_guardar.pack(side="right")
-
-        # inicialmente deshabilitados borrar
+        # inicialmente deshabilitado borrar
         self.btn_borrar.configure(state="disabled")
-        self.btn_guardar.configure(state="disabled")
-        self.btn_cancelar.configure(state="disabled")
 
         # Título
         titulo = ctk.CTkLabel(self, text="Productos", font=ctk.CTkFont(size=22, weight="bold"))
@@ -161,9 +146,6 @@ class ProductsView(ctk.CTkFrame):
             ("codigo_barras", 180),
         ]
         
-        for i, (key, label) in enumerate(self.COLUMNS):
-            width = dict(column_config).get(key, 120)
-            self.sheet.column_width(column=i, width=width)
         
         # Hacer que el sheet se expanda para llenar el espacio
         self.sheet.set_options(
@@ -257,16 +239,37 @@ class ProductsView(ctk.CTkFrame):
         # Establecer los datos en el sheet
         if data:
             self.sheet.set_sheet_data(data)
-            # Ajustar automáticamente el ancho de las columnas al contenido
-            # pero respetando los anchos mínimos configurados
+            
+            # Ajustar automáticamente el ancho de la columna "Nombre" (índice 1)
             try:
-                # Redimensionar cada columna para ajustarse al contenido
+                # Calcular el ancho máximo necesario para la columna "Nombre"
+                nombre_col_idx = 1  # La columna "Nombre" es la segunda (índice 1)
+                max_length = len(self.COLUMNS[nombre_col_idx][1])  # Empezar con el ancho del header
+                
+                # Verificar el largo de cada nombre en los datos
+                for row in data:
+                    if nombre_col_idx < len(row):
+                        cell_length = len(str(row[nombre_col_idx]))
+                        if cell_length > max_length:
+                            max_length = cell_length
+                
+                # Calcular el ancho en píxeles (aproximadamente 8 píxeles por carácter)
+                # Agregar un margen de 20 píxeles para el padding
+                optimal_width = max(200, min(500, max_length * 8 + 20))
+                
+                # Establecer el ancho de la columna "Nombre"
+                self.sheet.column_width(column=nombre_col_idx, width=optimal_width)
+                
+                # Alinear todas las columnas a la izquierda
                 for col_idx in range(len(self.COLUMNS)):
                     self.sheet.align_columns(columns=[col_idx], align="w")
-            except:
-                pass
+            except Exception as e:
+                print(f"Error ajustando ancho de columnas: {e}")
         else:
             self.sheet.set_sheet_data([[""] * len(self.COLUMNS)])
+
+        
+    
     
     def _on_sheet_select(self, event):
         """Maneja la selección de filas en el sheet."""
@@ -309,6 +312,9 @@ class ProductsView(ctk.CTkFrame):
                         try:
                             clean_value = str(new_value).replace("$", "").replace(",", "").strip()
                             updated_data[key] = float(clean_value) if clean_value else 0.0
+                            # Actualizar la celda con formato de precio
+                            if clean_value:
+                                self.sheet.set_cell_data(row_idx, col_idx, f"${float(clean_value):.2f}")
                         except:
                             updated_data[key] = 0.0
                     elif key in ("id_categoria", "id_proveedor", "cantidad"):
@@ -319,11 +325,12 @@ class ProductsView(ctk.CTkFrame):
                     else:
                         updated_data[key] = str(new_value) if new_value else ""
                     
+                    # Actualizar el producto local primero
+                    self._productos[row_idx].update(updated_data)
+                    
                     # Llamar al controller para actualizar en BD
                     if self.controller and hasattr(self.controller, "update_product_from_sheet"):
-                        self.controller.update_product_from_sheet(producto_id, updated_data)
-                        # Actualizar el producto local
-                        self._productos[row_idx].update(updated_data)
+                        self.controller.update_product_from_sheet(producto_id, updated_data, row_idx)
         except Exception as e:
             print(f"Error al guardar edición: {e}")
             import traceback
@@ -333,15 +340,17 @@ class ProductsView(ctk.CTkFrame):
     
     def add_new_row(self):
         """Agrega una fila vacía al inicio del sheet para crear un nuevo producto."""
-        # Insertar fila vacía en la primera posición
-        self.sheet.insert_row(values=[""] * len(self.COLUMNS), idx=0)
         # Agregar un producto temporal a la lista interna
         new_product = {key: "" for key, _ in self.COLUMNS}
         new_product["id"] = None  # Sin ID todavía
         self._productos.insert(0, new_product)
-        # Seleccionar la primera celda para empezar a editar
+        
+        # Reconstruir la vista con el nuevo producto incluido
+        self.build_rows()
+        
+        # Seleccionar la primera fila, columna "nombre" (segunda columna)
         self.sheet.see(0, 0)
-        self.sheet.select_cell(0, 1)  # Seleccionar columna "nombre" (segunda columna)
+        self.sheet.select_cell(0, 1)  # Seleccionar columna "nombre" para empezar a editar
 
     def _on_edit(self):
         """Handler para el botón Editar: delega al controller si existe.
@@ -361,83 +370,6 @@ class ProductsView(ctk.CTkFrame):
                 messagebox.showerror("Error al editar", f"Ocurrió un error al editar: {e}")
         else:
             messagebox.showinfo("Editar producto", "Funcionalidad de edición no disponible.")
-
-    def _on_search(self):
-        """Inicia una búsqueda paginada a través del controller (en background)."""
-        try:
-            q = self.search_entry.get().strip()
-        except Exception:
-            q = ""
-
-        # cancelar búsqueda programada pendiente
-        try:
-            if getattr(self, "_search_after_id", None):
-                self.after_cancel(self._search_after_id)
-                self._search_after_id = None
-        except Exception:
-            pass
-
-        self._last_query = q if q != "" else None
-
-        if self.controller and hasattr(self.controller, "search_products"):
-            # pedir página 0
-            try:
-                self.controller.search_products(query=self._last_query, page=0, page_size=self.PAGE_SIZE, async_search=True)
-            except Exception:
-                pass
-        else:
-            # fallback a filtrado en memoria
-            try:
-                ql = (q or "").lower()
-                self._productos = [p for p in getattr(self, "_all_products", []) if ql in str(p.get("nombre", "")).lower()]
-            except Exception:
-                self._productos = list(getattr(self, "_all_products", []))
-            # limpiar selección previa
-            try:
-                if self._selected_widget is not None:
-                    self._selected_widget.configure(fg_color="transparent")
-            except Exception:
-                pass
-            self._selected_widget = None
-            self._selected_id = None
-            self.btn_editar.configure(state="disabled")
-            self.btn_borrar.configure(state="disabled")
-            self.build_rows()
-
-    def _on_clear_search(self):
-        """Restablece la vista a la lista completa."""
-        self.search_entry.delete(0, "end")
-        self._last_query = None
-
-        if self.controller and hasattr(self.controller, "search_products"):
-            try:
-                self.controller.search_products(query=None, page=0, page_size=self.PAGE_SIZE, async_search=True)
-            except Exception:
-                # fallback
-                self._productos = list(getattr(self, "_all_products", []))
-        else:
-            self._productos = list(getattr(self, "_all_products", []))
-
-        # limpiar selección previa
-        try:
-            if self._selected_widget is not None:
-                self._selected_widget.configure(fg_color="transparent")
-        except Exception:
-            pass
-        self._selected_widget = None
-        self._selected_id = None
-        self.btn_editar.configure(state="disabled")
-        self.btn_borrar.configure(state="disabled")
-
-        # cancelar búsqueda programada si existe
-        try:
-            if getattr(self, "_search_after_id", None):
-                self.after_cancel(self._search_after_id)
-                self._search_after_id = None
-        except Exception:
-            pass
-
-        self.build_rows()
 
     def set_page(self, rows, page, page_size, total):
         """Recibe una página de resultados desde el controller y actualiza la vista."""
@@ -467,7 +399,6 @@ class ProductsView(ctk.CTkFrame):
                 pass
             self._selected_widget = None
             self._selected_id = None
-            self.btn_editar.configure(state="disabled")
             self.btn_borrar.configure(state="disabled")
 
             self.build_rows()
@@ -490,23 +421,6 @@ class ProductsView(ctk.CTkFrame):
                 self.controller.search_products(query=self._last_query, page=new_page, page_size=self.PAGE_SIZE, async_search=True)
             except Exception:
                 pass
-
-    def _schedule_search(self, delay=300):
-        """Programa una búsqueda tras `delay` ms, cancelando la anterior (debounce)."""
-        try:
-            if getattr(self, "_search_after_id", None):
-                try:
-                    self.after_cancel(self._search_after_id)
-                except Exception:
-                    pass
-                self._search_after_id = None
-        except Exception:
-            pass
-
-        try:
-            self._search_after_id = self.after(delay, self._on_search)
-        except Exception:
-            self._search_after_id = None
 
     def _on_delete(self):
         """Handler para el botón Borrar: confirma y delega al controller, luego actualiza la vista localmente."""
@@ -543,9 +457,9 @@ class ProductsView(ctk.CTkFrame):
             pass
         self._selected_widget = None
         self._selected_id = None
-        self.btn_editar.configure(state="disabled")
         self.btn_borrar.configure(state="disabled")
 
         # reconstruir filas
         self.build_rows()
     
+
